@@ -54,6 +54,8 @@ void VirtualMemoryManager::swapPageIn(int virtAddr)
 {
 
         TranslationEntry* currPageEntry;
+        //check for empty slot in RAM
+        
         if(nextVictim>= NumPhysPages) {//no more space available
                 fprintf(stderr, "Fatal error: No more space available\n");
                 exit(1);
@@ -61,10 +63,26 @@ void VirtualMemoryManager::swapPageIn(int virtAddr)
         }
 
         FrameInfo * physPageInfo = physicalMemoryInfo + nextVictim;
+
         //We assume this page is not occupied by any process space
         physPageInfo->space = currentThread->space;
         physPageInfo->pageTableIndex = virtAddr / PageSize;
         currPageEntry = getPageTableEntry(physPageInfo);
+        //CHANGE 
+        while (currPageEntry->use) {
+            currPageEntry->use = false;
+            nextVictim = (nextVictim + 1) % NumPhysPages;
+            physPageInfo = physicalMemoryInfo + nextVictim;
+            if (physPageInfo->space == NULL)
+                continue;
+            physPageInfo->space = currentThread->space;
+            physPageInfo->pageTableIndex = virtAddr / PageSize;
+            currPageEntry = getPageTableEntry(physPageInfo);
+        }
+        if (currPageEntry->dirty) {
+            writeToSwap(mainMemory + (currPageEntry->physicalPage * pageSize), pageSize, currPageEntry->locationOnDisk);
+        }
+        //END_CHANGE
         currPageEntry->physicalPage = memoryManager->getPage();
         loadPageToCurrVictim(virtAddr);
         nextVictim = nextVictim + 1;
@@ -85,7 +103,7 @@ void VirtualMemoryManager::releasePages(AddrSpace* space)
 //      swapPageInfo->removePage(currPage);
       //swapPageInfo->pageTableEntry = NULL;
 
-        if (currPage->valid == TRUE)
+        if (currPage->valid)
         {
             //int currPID = currPage->space->getPCB()->getPID();
             int currPID = space->getPCB()->getPID();
@@ -93,6 +111,7 @@ void VirtualMemoryManager::releasePages(AddrSpace* space)
             memoryManager->clearPage(currPage->physicalPage);
             physicalMemoryInfo[currPage->physicalPage].space = NULL; 
         }
+
         swapSectorMap->Clear((currPage->locationOnDisk) / PageSize);
     }
 }
